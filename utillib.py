@@ -24,6 +24,23 @@ import crmsh.config
 from crmsh import msg as crmmsg
 from crmsh import utils as crmutils
 
+def _mkdir(directory):
+    """
+    from crmsh/tmpfiles.py
+    """
+    if not os.path.isdir(directory):
+        try:
+            os.makedirs(directory)
+        except OSError as err:
+            log_fatal("Failed to create directory: %s"%(err))
+
+def add_tmpfiles(contents):
+    """
+    add contents for removing when program exit
+    """
+    with open(constants.TMPFLIST, 'a') as f:
+        f.write(contents+'\n')
+
 def base_check():
     if not which("which"):
         log_fatal("please install the which(1) program")
@@ -33,6 +50,25 @@ def check_env():
     base_check()
     get_ocf_dir()
     load_ocf_dirs()
+
+def create_tempfile(time=None):        
+    random_str = random_string(4)  
+    try:
+        filename = tempfile.mkstemp(suffix=random_str, prefix="tmp.")[1]
+    except:
+        log_fatal("Can't create file %s" % filename)
+    if time:
+        os.utime(filename, (time, time))
+    return filename
+
+def drop_tempfiles():
+    with open(constants.TMPFLIST, 'r') as f:
+        for line in f.read().split('\n'):
+            if os.path.isdir(line):
+                shutil.rmtree(line)
+            if os.path.isfile(line):
+                os.remove(line)
+    os.remove(constants.TMPFLIST)
 
 def get_command_info(cmd):
     code, out, err = crmutils.get_stdout_stderr(cmd)
@@ -133,6 +169,18 @@ def log_fatal(msg):
 
 def log_warning(msg):
     crmmsg.common_warn("%s# %s" % (constants.WE, msg))
+
+def make_temp_dir():          
+    dir_path = r"/tmp/.hb_report.workdir.%s" % random_string(6)
+    _mkdir(dir_path)          
+    return dir_path
+
+def random_string(num):       
+    tmp = []
+    if crmutils.is_int(num) and num > 0:
+        s = string.letters + string.digits
+        tmp = random.sample(s, num)
+    return ''.join(tmp)
 
 def set_env():
     os.environ["LC_ALL"] = "POSIX"

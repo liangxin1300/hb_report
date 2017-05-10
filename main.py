@@ -16,7 +16,12 @@ from crmsh import utils as crmutils
 def run():
     if len(sys.argv) == 1:
         usage()
+
     utillib.check_env()
+    constants.TMPFLIST = utillib.create_tempfile()
+    atexit.register(utillib.drop_tempfiles)
+    tmpdir = utillib.make_temp_dir()
+    utillib.add_tmpfiles(tmpdir)
 
 def usage(short_msg=''):
     print("""
