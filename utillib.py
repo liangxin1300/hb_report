@@ -64,6 +64,49 @@ def arch_logs(logf, from_time, to_time):
             break
     return ret
 
+def analyze():
+    workdir = constants.WORKDIR
+    out_string = ""
+    tmp_string = ""
+    flist = [constants.MEMBERSHIP_F, constants.CRM_MON_F,
+             constants.B_CONF, constants.SYSINFO_F, constants.CIB_F]
+    for f in flist:
+        out_string += "Diff %s... " % f
+        if not glob.glob("%s/*/%s"%(workdir, f)):
+            out_string += "no %s/*/%s :/\n" % (workdir, f)
+            continue
+        code, tmp_string = analyze_one(workdir, f)
+        out_string += tmp_string
+        if code == 0:
+            out_string += "OK\n"
+            if f != constants.CIB_F:
+                consolidate(workdir, f)
+
+    out_string += "\n"
+
+    out_string += check_crmvfy(workdir)
+    out_string += check_backtraces(workdir)
+    out_string += check_permissions(workdir)
+    out_string += check_logs(workdir)
+
+    analyze_f = os.path.join(workdir, constants.ANALYSIS_F)
+    crmutils.str2file(out_string, analyze_f)
+
+def analyze_one(workdir, file_):
+    out_string = ""
+    tmp_string = ""
+    tmp_rc = 0
+    node0 = ""
+    rc = 0
+    for n in constants.NODES.split():
+        if node0:
+            tmp_rc, tmp_string = diff_check(os.path.join(workdir, node0, file_), os.path.join(workdir, n, file_))
+            out_string += tmp_string
+            rc += tmp_rc
+        else:
+            node0 = n
+    return (rc, out_string)
+
 def base_check():
     if not which("which"):
         log_fatal("please install the which(1) program")
@@ -73,11 +116,60 @@ def booth_info():
         return ""
     return get_command_info("booth --version")[1]
 
+def check_backtraces(workdir):
+    out_string = ""
+    pattern = "Core was generated|Program terminated"
+    for n in constants.NODES.split():
+        bt_f = os.path.join(workdir, n, constants.BT_F)
+        if os.path.isfile(bt_f) and os.stat(bt_f).st_size != 0:
+            out_string += "WARN: coredumps found at %s:\n" % n
+            for line in grep(pattern, infile=bt_f):
+                out_string += "    %s\n" % line
+    return out_string
+
+def check_crmvfy(workdir):
+    out_string = ""
+    for n in constants.NODES.split():
+        crm_verify_f = os.path.join(workdir, n, constants.CRM_VERIFY_F)
+        if os.path.isfile(crm_verify_f) and os.stat(crm_verify_f).st_size != 0:
+            out_string += "WARN: crm_verify reported warnings at %s:\n" % n
+            out_string += open(crm_verify_f).read()
+    return out_string
+
 def check_env():   
     set_env()
     base_check()
     get_ocf_dir()
     load_ocf_dirs()
+
+def check_if_log_is_empty():
+    for f in find_files_all(constants.HALOG_F, constants.WORKDIR):
+        if os.stat(f).st_size == 0:
+            log_warning("Report contains no logs; did you get the right timeframe?")
+
+def check_logs(workdir):
+    out_string = ""
+    log_list = []
+    for l in constants.EXTRA_LOGS.split():
+        log_list += find_files_all(workdir, os.path.basename(l))
+    if not log_list:
+        return out_string
+
+    out_string += "Log patterns:\n"
+    log_patterns = constants.LOG_PATTERNS.replace(' ', '|')
+    for n in constants.NODES.split():
+        for f in log_list:
+            out_string += '\n'.join(grep(log_patterns, infile=f))
+    return out_string
+
+def check_permissions(workdir):
+    out_string = ""
+    for n in constants.NODES.split():
+        permissions_f = os.path.join(workdir, n, constants.PERMISSIONS_F)
+        if os.path.isfile(permissions_f) and os.stat(permissions_f).st_size != 0:
+            out_string += "Checking problems with permissions/ownership at %s:\n" % n
+            out_string += open(permissions_f).read()
+    return out_string
 
 def check_perms():
     out_string = ""
@@ -110,6 +202,27 @@ def check_time(var, option):
                                         "2007/9/5 12:30"
                                         "09-Sep-07 2:00"
                   """%option)
+
+def cib_diff(file1, file2):
+    code = 0
+    out_string = ""
+    tmp_string = ""
+    d1 = os.path.dirname(file1)
+    d2 = os.path.dirname(file2)
+    if (os.path.isfile(os.path.join(d1, "RUNNING")) and \
+        os.path.isfile(os.path.join(d2, "RUNNING"))) or \
+       (os.path.isfile(os.path.join(d1, "STOPPED")) and \
+        os.path.isfile(os.path.join(d2, "STOPPED"))):
+        if which("crm_diff"):
+            code, tmp_string = get_command_info("crm_diff -c -n %s -o %s"%(file1, file2))
+            out_string += tmp_string
+        else:
+            code = 1
+            log_warning("crm_diff(8) not found, cannot diff CIBs")
+    else:
+        code = 1
+        out_string += "can't compare cibs from running and stopped systems\n"
+    return code, out_string
 
 def cluster_info():
     return get_command_info("corosync -v")[1]
@@ -182,6 +295,14 @@ def compatibility_pcmk():
         constants.CORES_DIRS += " /var/lib/corosync"
     constants.B_CONF = os.path.basename(constants.CONF)
 
+def consolidate(workdir, f):
+    for n in constants.NODES.split():
+        if os.path.isfile(os.path.join(workdir, f)):
+            os.remove(os.path.join(workdir, n, f))
+        else:
+            shutil.move(os.path.join(workdir, n, f), workdir)
+        os.symlink("../%s"%f, os.path.join(workdir, n, f))
+
 def corosync_blackbox():
     fdata_list = []
     for f in find_files("/var/lib/corosync", constants.FROM_TIME, constants.TO_TIME):
@@ -212,6 +333,20 @@ def crm_info():
 
 def crmsh_info():
     return get_command_info("crm report -V")[1]
+
+def date():
+    return datetime.datetime.now().strftime("%a %b %-d %H:%M:%S CST %Y")
+
+def diff_check(file1, file2):
+    out_string = ""
+    for f in [file1, file2]:
+        if not os.path.isfile(f):
+            out_string += "%s does not exist\n" % f
+            return (1, out_string)
+    if os.path.basename(file1) == constants.CIB_F:
+        return cib_diff(file1, file2)
+    else:
+        return (0, txt_diff(file1, file2))
 
 def dlm_dump():
     #TODO
@@ -264,6 +399,27 @@ def dump_state(workdir):
     cmd = "crm_node -p"
     crmutils.str2file(get_command_info(cmd)[1], os.path.join(workdir, constants.MEMBERSHIP_F))
 
+def events(destdir):
+    events_f = os.path.join(destdir, "events.txt")
+    out_string = ""
+    pattern = '|'.join(constants.EVENT_PATTERNS.split()[1::2])
+    halog_f = os.path.join(destdir, constants.HALOG_F)
+    if os.path.isfile(halog_f):
+        out_string = '\n'.join(grep(pattern, infile=halog_f))
+        crmutils.str2file(out_string, events_f)
+        for n in constants.NODES.split():
+            if os.path.isdir(os.path.join(destdir, n)):
+                events_node_f = os.path.join(destdir, n, "events.txt")
+                out_string = '\n'.join(grep(" %s "%n, infile=events_f))
+                crmutils.str2file(out_string, events_node_f)
+    else:
+        for n in constants.NODES.split():
+            halog_f = os.path.join(destdir, n, constants.HALOG_F)
+            if not os.path.isfile(halog_f):
+                continue
+            out_string = '\n'.join(grep(pattern, infile=halog_f))
+            crmutils.str2file(out_string, os.path.join(destdir, n, "events.text"))
+
 def find_decompressor(log_file):
     decompressor = "echo"
     if re.search("bz2$", log_file):
@@ -299,6 +455,13 @@ def find_files(dirs, from_time, to_time):
         res = cmd_res.split('\n')
 
     return res
+
+def find_files_all(name, path):
+    result = []
+    for root, dirs, files in os.walk(path):
+        if name in files:
+            result.append(os.path.join(root, name))
+    return result
 
 def find_first_ts(data):
     for line in data:
@@ -792,6 +955,23 @@ def make_temp_dir():
     _mkdir(dir_path)          
     return dir_path
 
+def mktemplate(argv):
+    workdir = constants.WORKDIR
+    out_string = constants.EMAIL_TMPLATE.format("%s"%date(), ' '.join(argv[1:]))
+    sysinfo_f = os.path.join(workdir, constants.SYSINFO_F)
+    if os.path.isfile(sysinfo_f):
+        out_string += "Common saystem info found:\n"
+        with open(sysinfo_f, 'r') as f:
+            out_string += f.read()
+    else:
+        for n in constants.NODES.split():
+            sysinfo_node_f = os.path.join(workdir, n, constants.SYSINFO_F)
+            if os.path.isfile(sysinfo_node_f):
+                out_string += "System info %s:\n" % n
+                out_string += sed_inplace(sysinfo_node_f, r'^', '    ')
+                out_string += "\n"
+    crmutils.str2file(out_string, os.path.join(workdir, constants.DESCRIPTION_F))
+
 def node_needs_pwd(node):
     for n in constants.SSH_PASSWORD_NODES.split():
         if n == node:
@@ -937,6 +1117,16 @@ def sanitize_one(in_file, mode=None):
 
     touch_r(ref, in_file)
 
+def sed_inplace(filename, pattern, repl):
+    out_string = ""
+
+    pattern_compiled = re.compile(pattern)
+    with open(filename, 'r') as fd:
+        for line in fd:
+            out_string += pattern_compiled.sub(repl, line)
+
+    return out_string
+
 def set_env():
     os.environ["LC_ALL"] = "POSIX"
 
@@ -1071,6 +1261,9 @@ def ts_to_dt(timestamp):
     dt = crmutils.timestamp_to_datetime(timestamp)
     dt += tz.tzlocal().utcoffset(dt)
     return dt
+
+def txt_diff(file1, file2):
+    return get_command_info("diff -bBu %s %s"%(file1, file2))[1]
 
 def verify_deb(packages):
     pass

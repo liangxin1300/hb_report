@@ -231,6 +231,18 @@ def run():
         cmd = r"cd %s/.. && tar -h -cf - %s" % (constants.WORKDIR, constants.WE)
         code, out, err = crmutils.get_stdout_stderr(cmd)
         print out
+    else:
+        p_list = []
+        p_list.append(multiprocessing.Process(target=utillib.analyze))
+        p_list.append(multiprocessing.Process(target=utillib.events, args=(constants.WORKDIR,)))
+        for p in p_list:
+            p.start()
+
+        utillib.check_if_log_is_empty()
+        utillib.mktemplate(sys.argv)
+
+        for p in p_list:
+            p.join()
 
 def set_dest(dest):
     if dest:
