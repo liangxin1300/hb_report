@@ -1,4 +1,22 @@
+# Copyright (C) 2017 Xin Liang <XLiang@suse.com>
+# See COPYING for license information.
+import atexit
+import getopt
+import multiprocessing
+import os
+import re
 import sys
+import datetime
+import shutil
+
+import constants
+import utillib
+from crmsh import utils as crmutils
+
+def run():
+    if len(sys.argv) == 1:
+        usage()
+    utillib.check_env()
 
 def usage(short_msg=''):
     print("""
