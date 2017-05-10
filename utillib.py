@@ -167,11 +167,6 @@ def grep_row(pattern, indata, flag):
                 res.append(line)
     return res
 
-def is_collector():
-    if sys.argv[1] == "__slave":
-        return True
-    return False
-
 def load_ocf_dirs():
     inf = "%s/lib/heartbeat/ocf-directories" % constants.OCF_DIR
     if not os.path.isfile(inf):

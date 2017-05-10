@@ -13,6 +13,37 @@ import constants
 import utillib
 from crmsh import utils as crmutils
 
+def is_collector():
+    if sys.argv[1] == "__slave":
+        return True
+    return False
+
+def load_env(env_str):
+    list_ = []
+    for tmp in env_str.split():
+        if re.search('=', tmp):
+            item = tmp
+        else:
+            list_.remove(item)
+            item += " %s" % tmp
+        list_.append(item)
+
+    env_dict = {}
+    env_dict = crmutils.nvpairs2dict(list_)
+    constants.DEST = env_dict["DEST"]
+    constants.FROM_TIME = float(env_dict["FROM_TIME"])
+    constants.TO_TIME = float(env_dict["TO_TIME"])
+    constants.USER_NODES = env_dict["USER_NODES"]
+    constants.NODES = env_dict["NODES"]
+    constants.HA_LOG = env_dict["HA_LOG"]
+    #constants.UNIQUE_MSG = env_dict["UNIQUE_MSG"]
+    constants.SANITIZE = env_dict["SANITIZE"]
+    constants.DO_SANITIZE = int(env_dict["DO_SANITIZE"])
+    constants.SKIP_LVL = int(env_dict["SKIP_LVL"])
+    constants.EXTRA_LOGS = env_dict["EXTRA_LOGS"]
+    constants.PCMK_LOG = env_dict["PCMK_LOG"]
+    constants.VERBOSITY = int(env_dict["VERBOSITY"])
+
 def parse_argument(argv):
     try:
         opt, arg = getopt.getopt(argv[1:], constants.ARGOPTS_VALUE)
@@ -88,6 +119,9 @@ def run():
     else:
         constants.WORKDIR = os.path.join(tmpdir, constants.DEST, constants.WE)
     utillib._mkdir(constants.WORKDIR)
+
+    if is_collector():
+        load_env(' '.join(sys.argv[2:]))
 
 def set_dest(dest):
     if dest:
