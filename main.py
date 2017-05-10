@@ -13,6 +13,36 @@ import constants
 import utillib
 from crmsh import utils as crmutils
 
+def collect_for_nodes(nodes, arg_str):
+    for node in nodes.split():
+        if utillib.node_needs_pwd(node):
+            pass
+        else:
+           p = multiprocessing.Process(target=utillib.start_slave_collector, args=(node, arg_str))
+           p.start()
+           p.join()
+
+def dump_env():
+    env_dict = {}
+    env_dict["DEST"] = constants.DEST
+    env_dict["FROM_TIME"] = constants.FROM_TIME
+    env_dict["TO_TIME"] = constants.TO_TIME
+    env_dict["USER_NODES"] = constants.USER_NODES
+    env_dict["NODES"] = constants.NODES
+    env_dict["HA_LOG"] = constants.HA_LOG
+    #env_dict["UNIQUE_MSG"] = constants.UNIQUE_MSG
+    env_dict["SANITIZE"] = constants.SANITIZE
+    env_dict["DO_SANITIZE"] = int(constants.DO_SANITIZE)
+    env_dict["SKIP_LVL"] = int(constants.SKIP_LVL)
+    env_dict["EXTRA_LOGS"] = constants.EXTRA_LOGS
+    env_dict["PCMK_LOG"] = constants.PCMK_LOG
+    env_dict["VERBOSITY"] = int(constants.VERBOSITY)
+
+    res_str = ""
+    for k, v in env_dict.items():
+        res_str += " {}={}".format(k, v)
+    return res_str
+
 def get_log():
     outf = os.path.join(constants.WORKDIR, constants.HALOG_F)
 
@@ -188,6 +218,13 @@ def run():
 
     if constants.THIS_IS_NODE == 1:
         get_log()
+
+    if not is_collector():
+        arg_str = dump_env()
+        if not constants.NO_SSH:
+            collect_for_nodes(constants.NODES, arg_str)
+        elif constants.THIS_IS_NODE == 1:
+            collect_for_nodes(constants.WE, arg_str)
 
 def set_dest(dest):
     if dest:

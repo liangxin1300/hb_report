@@ -591,6 +591,12 @@ def make_temp_dir():
     _mkdir(dir_path)          
     return dir_path
 
+def node_needs_pwd(node):
+    for n in constants.SSH_PASSWORD_NODES.split():
+        if n == node:
+            return True
+    return False
+
 def print_log(logf):
     cat = find_decompressor(logf)
     cmd = "%s %s" % (cat, logf)
@@ -661,6 +667,25 @@ def stdchannel_redirected(stdchannel, dest_filename):
             os.dup2(oldstdchannel, stdchannel.fileno())
         if dest_file is not None:
             dest_file.close()
+
+def start_slave_collector(node, arg_str):
+    if node == constants.WE:
+        cmd = r"python {}/main.py __slave".format(os.getcwd())
+        for item in arg_str.split():
+            cmd += " {}".format(str(item))
+        _, out = crmutils.get_stdout(cmd)
+        cmd = r"(cd {} && tar xf -)".format(constants.WORKDIR)
+        crmutils.get_stdout(cmd, input_s=out)
+
+    else:
+        cmd = r'ssh {} {} "{} python {}/main.py __slave"'.\
+              format(constants.SSH_OPTS, node, \
+                     constants.SUDO, os.getcwd())
+        for item in arg_str.split():
+            cmd += " {}".format(str(item))
+        _, out = crmutils.get_stdout(cmd)
+        cmd = r"(cd {} && tar xf -)".format(constants.WORKDIR)
+        crmutils.get_stdout(cmd, input_s=out)
 
 def tail(n, indata):
     return indata.split('\n')[n-1:-1]
