@@ -101,6 +101,41 @@ def drop_tempfiles():
                 os.remove(line)
     os.remove(constants.TMPFLIST)
 
+def find_ssh_user():
+    ssh_user = "__undef"
+    if not constants.SSH_USER:
+        try_user_list = "__default " + constants.TRY_SSH
+    else:
+        try_user_list = constants.SSH_USER
+
+    for n in constants.NODES.split():
+        rc = 1
+        if n == constants.WE:
+            continue
+        for u in try_user_list.split():
+            if u != '__default':
+                ssh_s = '@'.join((u, n))
+            else:
+                ssh_s = n
+
+            if test_ssh_conn(ssh_s):
+                log_debug("ssh %s OK" % ssh_s)
+                ssh_user = u
+                try_user_list = u
+                rc = 0
+                break
+            else:
+                log_debug("ssh %s failed" % ssh_s)
+        if rc == 1:
+            constants.SSH_PASSWORD_NODES += " %s" % n
+
+    if constants.SSH_PASSWORD_NODES:
+        log_warning("passwordless ssh to node(s) %s does not work" % constants.SSH_PASSWORD_NODES)
+    if ssh_user == "__undef":
+        return
+    if ssh_user != "__default":
+        constants.SSH_USER = ssh_user
+
 def get_cib_dir():
     try:
         constants.CIB_DIR = crmsh.config.path.crm_config
@@ -298,6 +333,14 @@ def random_string(num):
 
 def set_env():
     os.environ["LC_ALL"] = "POSIX"
+
+def test_ssh_conn(addr):
+    cmd = r"ssh %s -T -o Batchmode=yes %s true" % (constants.SSH_OPTS, addr)
+    code, _ = get_command_info(cmd)
+    if code == 0:
+        return True
+    else:
+        return False
 
 def which(prog):
     code, _ = get_command_info("which %s" % prog)

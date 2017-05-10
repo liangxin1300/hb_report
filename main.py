@@ -138,6 +138,20 @@ def run():
     if not is_collector():
         if constants.THIS_IS_NODE != 1:
             utillib.log_warning("this is not a node and you didn't specify a list of nodes using -n")
+#
+# ssh business
+#
+        if not constants.NO_SSH:
+            utillib.find_ssh_user()
+            if constants.SSH_USER:
+                constants.SSH_OPTS += " -o User=%s" % constants.SSH_USER
+        if ((not constants.SSH_USER) and (os.getuid() != 0)) or \
+           constants.SSH_USER and constants.SSH_USER != "root":
+            utillib.log_debug("ssh user other than root, use sudo")
+            constants.SUDO = "sudo -u root"
+        if os.getuid() != 0:
+            utillib.log_debug("local user other than root, use sudo")
+            constants.LOCAL_SUDO = "sudo -u root"
 
 def set_dest(dest):
     if dest:
