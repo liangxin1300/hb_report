@@ -13,6 +13,39 @@ import constants
 import utillib
 from crmsh import utils as crmutils
 
+def get_log():
+    outf = os.path.join(constants.WORKDIR, constants.HALOG_F)
+
+    # collect journal from systemd unless -M was passed
+    if constants.EXTRA_LOGS:
+        utillib.collect_journal(constants.FROM_TIME, \
+                                constants.TO_TIME, \
+                                os.path.join(constants.WORKDIR, constants.JOURNAL_F))
+
+    if constants.HA_LOG and not os.path.isfile(constants.HA_LOG):
+        if not is_collector():
+            utillib.log_warning("%s not found; we will try to find log ourselves" % ha_log)
+            constants.HA_LOG = ""
+    if not constants.HA_LOG:
+        constants.HA_LOG = utillib.find_log()
+    if (not constants.HA_LOG) or (not os.path.isfile(constants.HA_LOG)):
+        if constants.CTS:
+            pass #TODO
+        else:
+            utillib.log_warning("not log at %s" % constants.WE)
+        return
+
+    if constants.CTS:
+        pass #TODO
+    else:
+        getstampproc = utillib.find_getstampproc(constants.HA_LOG)
+        if getstampproc:
+            constants.GET_STAMP_FUNC = getstampproc
+            utillib.dump_logset(constants.HA_LOG, constants.FROM_TIME, constants.TO_TIME, outf)
+            utillib.log_size(constants.HA_LOG, outf+'.info')
+        else:
+            utillib.log_warning("could not figure out the log format of %s" % constants.HA_LOG)
+
 def is_collector():
     if sys.argv[1] == "__slave":
         return True
@@ -152,6 +185,9 @@ def run():
         if os.getuid() != 0:
             utillib.log_debug("local user other than root, use sudo")
             constants.LOCAL_SUDO = "sudo -u root"
+
+    if constants.THIS_IS_NODE == 1:
+        get_log()
 
 def set_dest(dest):
     if dest:
