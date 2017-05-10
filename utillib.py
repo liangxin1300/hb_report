@@ -51,6 +51,15 @@ def check_env():
     get_ocf_dir()
     load_ocf_dirs()
 
+def check_time(var, option):
+    if not var:
+        log_fatal("""bad time specification: %s 
+                        try these like: 2pm
+                                        1:00
+                                        "2007/9/5 12:30"
+                                        "09-Sep-07 2:00"
+                  """%option)
+
 def create_tempfile(time=None):        
     random_str = random_string(4)  
     try:
@@ -60,6 +69,9 @@ def create_tempfile(time=None):
     if time:
         os.utime(filename, (time, time))
     return filename
+
+def crmsh_info():
+    return get_command_info("crm report -V")[1]
 
 def drop_tempfiles():
     with open(constants.TMPFLIST, 'r') as f:
@@ -148,6 +160,11 @@ def grep_row(pattern, indata, flag):
             else:
                 res.append(line)
     return res
+
+def is_collector():
+    if sys.argv[1] == "__slave":
+        return True
+    return False
 
 def load_ocf_dirs():
     inf = "%s/lib/heartbeat/ocf-directories" % constants.OCF_DIR

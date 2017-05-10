@@ -13,6 +13,64 @@ import constants
 import utillib
 from crmsh import utils as crmutils
 
+def parse_argument(argv):
+    try:
+        opt, arg = getopt.getopt(argv[1:], constants.ARGOPTS_VALUE)
+    except getopt.GetoptError:
+        usage("short")
+
+    if len(arg) == 0:
+        constants.DESTDIR = "."
+        constants.DEST = "hb_report-%s" % datetime.datetime.now().strftime('%w-%d-%m-%Y')
+    elif len(arg) == 1:
+        constants.TMP = arg[0]
+    else:
+        usage("short")
+
+    for args, option in opt:
+        if args == '-h':
+            usage()
+        if args == "-V":
+            version()
+        if args == '-f':
+            constants.FROM_TIME = crmutils.parse_to_timestamp(option)
+            utillib.check_time(constants.FROM_TIME, option)
+        if args == '-t':
+            constants.TO_TIME = crmutils.parse_to_timestamp(option)
+            utillib.check_time(constants.TO_TIME, option)
+        if args == "-n":
+            constants.USER_NODES += " %s" % option
+        if args == "-u":
+            constants.SSH_USER = option
+        if args == "-X":
+            constants.SSH_OPTS += " %s" % option
+        if args == "-l":
+            constants.HA_LOG = option
+        if args == "-e":
+            constants.EDITOR = option
+        if args == "-p":
+            constants.SANITIZE += " %s" % option
+        if args == "-s":
+            constants.DO_SANITIZE = 1
+        if args == "-Q":
+            constants.SKIP_LVL += 1
+        if args == "-L":
+            constants.LOG_PATTERNS += " %s" % option
+        if args == "-S":
+            constants.NO_SSH = 1
+        if args == "-D":
+            constants.NO_DESCRIPTION = 1
+        if args == "-Z":
+            constants.FORCE_REMOVE_DEST = 1
+        if args == "-M":
+            constants.EXTRA_LOGS = ""
+        if args == "-E":
+            constants.EXTRA_LOGS += " %s" % option
+        if args == "-v":
+            constants.VERBOSITY += 1
+        if args == '-d':
+            constants.COMPRESS = ""
+
 def run():
     if len(sys.argv) == 1:
         usage()
@@ -22,6 +80,9 @@ def run():
     atexit.register(utillib.drop_tempfiles)
     tmpdir = utillib.make_temp_dir()
     utillib.add_tmpfiles(tmpdir)
+
+    if not is_collector():
+        parse_argument(sys.argv)
 
 def usage(short_msg=''):
     print("""
@@ -94,3 +155,6 @@ usage: report -f {time} [-t time]
           IT IS YOUR RESPONSIBILITY TO PROTECT THE DATA FROM EXPOSURE!
         """)
     sys.exit(1)
+
+def version():
+    utillib.crmsh_info()
