@@ -127,6 +127,18 @@ def run():
     if constants.CTS == "" or is_collector():
         utillib.get_log_vars()
 
+    if not is_collector():
+        constants.NODES = ' '.join(utillib.get_nodes())
+        utillib.log_debug("nodes: %s"%constants.NODES)
+    if constants.NODES == "":
+        utillib.log_fatal("could not figure out a list of nodes; is this a cluster node?")
+    if constants.WE in constants.NODES.split():
+        constants.THIS_IS_NODE = 1 
+  
+    if not is_collector():
+        if constants.THIS_IS_NODE != 1:
+            utillib.log_warning("this is not a node and you didn't specify a list of nodes using -n")
+
 def set_dest(dest):
     if dest:
         constants.DESTDIR = utillib.get_dirname(dest)

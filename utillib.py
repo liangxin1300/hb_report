@@ -151,6 +151,22 @@ def get_log_vars():
     log_debug("log settings: facility=%s logfile=%s debugfile=%s" % \
              (constants.HA_LOGFACILITY, constants.HA_LOGFILE, constants.HA_DEBUGFILE))
 
+def get_nodes():
+    nodes = []
+    # 1. set by user?
+    if constants.USER_NODES:
+        nodes = constants.USER_NODES.split()
+    # 2. running crm
+    elif crmutils.is_process("crmd"):
+        cmd = "crm node server"
+        nodes = get_command_info(cmd)[1].strip().split('\n')
+    # 3. if the cluster's stopped, try the CIB
+    else:
+        cmd = r"(CIB_file=%s/%s crm node server)" % (constants.CIB_DIR, constants.CIB_F)
+        nodes = get_command_info(cmd)[1].strip().split('\n')
+
+    return nodes
+
 def get_ocf_dir():
     ocf_dir = None
     try:
