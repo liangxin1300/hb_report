@@ -116,6 +116,14 @@ def get_command_info(cmd):
     else:
         return (code, "")
 
+def get_conf_var(option, default=None):
+    ret = default
+    with open(constants.CONF, 'r') as f:
+        for line in f.read().split('\n'):
+            if re.match("^\s*%s\s*:"%option, line):
+                ret = line.split(':')[1].lstrip()
+    return ret
+
 def get_crm_daemon_dir():
     try:
         constants.CRM_DAEMON_DIR = crmsh.config.path.crm_daemon_dir
@@ -130,6 +138,18 @@ def get_dirname(path):
     if not tmp:
         tmp = "."
     return tmp
+
+def get_log_vars():
+    if is_conf_set("debug"):
+        constants.HA_LOGLEVEL = "debug"
+    if is_conf_set("to_logfile"):
+        constants.HA_LOGFILE = get_conf_var("logfile", default="syslog")
+        constants.HA_DEBUGFILE = constants.HA_LOGFILE
+    elif is_conf_set("to_syslog"):
+        constants.HA_LOGFACILITY = get_conf_var("syslog_facility", default="daemon")
+
+    log_debug("log settings: facility=%s logfile=%s debugfile=%s" % \
+             (constants.HA_LOGFACILITY, constants.HA_LOGFILE, constants.HA_DEBUGFILE))
 
 def get_ocf_dir():
     ocf_dir = None
@@ -210,6 +230,19 @@ def grep_row(pattern, indata, flag):
             else:
                 res.append(line)
     return res
+
+def is_conf_set(option, subsys=None):
+    subsys_start = 0
+    with open(constants.CONF, 'r') as f:
+        for line in f.read().split('\n'):
+            if re.search("^\s*subsys\s*:\s*%s$" % subsys, line):
+                subsys_start = 1
+            if subsys_start == 1 and re.search("^\s*}", line):
+                subsys_start = 0
+            if re.match("^\s*%s\s*:\s*(on|yes)$" % option, line):
+                if not subsys or subsys_start == 1:
+                    return True
+    return False
 
 def is_exec(filename):
     return os.path.isfile(filename) and os.access(filename, os.X_OK)

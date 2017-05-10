@@ -124,6 +124,8 @@ def run():
         load_env(' '.join(sys.argv[2:]))
 
     utillib.compatibility_pcmk()
+    if constants.CTS == "" or is_collector():
+        utillib.get_log_vars()
 
 def set_dest(dest):
     if dest:
