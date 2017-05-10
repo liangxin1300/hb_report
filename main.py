@@ -226,6 +226,12 @@ def run():
         elif constants.THIS_IS_NODE == 1:
             collect_for_nodes(constants.WE, arg_str)
 
+    if is_collector():
+        utillib.collect_info()
+        cmd = r"cd %s/.. && tar -h -cf - %s" % (constants.WORKDIR, constants.WE)
+        code, out, err = crmutils.get_stdout_stderr(cmd)
+        print out
+
 def set_dest(dest):
     if dest:
         constants.DESTDIR = utillib.get_dirname(dest)

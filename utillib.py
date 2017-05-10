@@ -68,11 +68,39 @@ def base_check():
     if not which("which"):
         log_fatal("please install the which(1) program")
 
+def booth_info():
+    if not which("booth"):
+        return ""
+    return get_command_info("booth --version")[1]
+
 def check_env():   
     set_env()
     base_check()
     get_ocf_dir()
     load_ocf_dirs()
+
+def check_perms():
+    out_string = ""
+
+    for check_dir in [constants.PCMK_LIB, constants.PE_STATE_DIR, constants.CIB_DIR]:
+        flag = 0
+        out_string += "##### Check perms for %s: " % check_dir
+        stat_info = os.stat(check_dir)
+        if not stat.S_ISDIR(stat_info.st_mode):
+            flag = 1
+            out_string += "\n%s wrong type or doesn't exist\n" % check_dir
+            continue
+        if stat_info.st_uid != pwd.getpwnam('hacluster')[2] or\
+           stat_info.st_gid != pwd.getpwnam('hacluster')[3] or\
+           "%04o"%(stat_info.st_mode&07777) != "0750":
+            flag = 1
+            out_string += "\nwrong permissions or ownership for %s: " % check_dir
+            out_string += get_command_info("ls -ld %s"%check_dir)[1] + '\n'
+        if flag == 0:
+            out_string += "OK\n"
+
+    perms_f = os.path.join(constants.WORKDIR, constants.PERMISSIONS_F)
+    crmutils.str2file(out_string, perms_f)
 
 def check_time(var, option):
     if not var:
@@ -82,6 +110,36 @@ def check_time(var, option):
                                         "2007/9/5 12:30"
                                         "09-Sep-07 2:00"
                   """%option)
+
+def cluster_info():
+    return get_command_info("corosync -v")[1]
+
+def collect_info():
+    process_list = []
+    process_list.append(multiprocessing.Process(target=sys_info))
+    process_list.append(multiprocessing.Process(target=sys_stats))
+    process_list.append(multiprocessing.Process(target=get_pe_inputs))
+    process_list.append(multiprocessing.Process(target=crm_config))
+    process_list.append(multiprocessing.Process(target=touch_dc))
+
+    for p in process_list[0:2]:
+        p.start()
+    get_config()
+    for p in process_list[2:]:
+        p.start()
+
+    get_backtraces()
+    get_configurations()
+    check_perms()
+    dlm_dump()
+    time_status()
+    corosync_blackbox()
+    get_ratraces()
+
+    for p in process_list:
+        p.join()
+    if constants.SKIP_LVL == 0:
+        sanitize()
 
 def collect_journal(from_t, to_t, outf):
     if not which("journalctl"):
@@ -124,6 +182,15 @@ def compatibility_pcmk():
         constants.CORES_DIRS += " /var/lib/corosync"
     constants.B_CONF = os.path.basename(constants.CONF)
 
+def corosync_blackbox():
+    fdata_list = []
+    for f in find_files("/var/lib/corosync", constants.FROM_TIME, constants.TO_TIME):
+        if re.search("fdata", f):
+            fdata_list.append(f)
+    if fdata_list:
+        blackbox_f = os.path.join(constants.WORKDIR, constants.COROSYNC_RECORDER_F)
+        crmutils.str2file(get_command_info("corosync-blackbox")[1], blackbox_f)
+
 def create_tempfile(time=None):        
     random_str = random_string(4)  
     try:
@@ -134,8 +201,21 @@ def create_tempfile(time=None):
         os.utime(filename, (time, time))
     return filename
 
+def crm_config():
+    workdir = constants.WORKDIR
+    if os.path.isfile(os.path.join(workdir, constants.CIB_F)):
+        cmd = r"CIB_file=%s/%s crm configure show" % (workdir, constants.CIB_F)
+        crmutils.str2file(get_command_info(cmd)[1], os.path.join(workdir, constants.CIB_TXT_F))
+
+def crm_info():
+    return get_command_info("%s/crmd version" % constants.CRM_DAEMON_DIR)[1]
+
 def crmsh_info():
     return get_command_info("crm report -V")[1]
+
+def dlm_dump():
+    #TODO
+    pass
 
 def drop_tempfiles():
     with open(constants.TMPFLIST, 'r') as f:
@@ -176,6 +256,14 @@ def dump_logset(logf, from_time, to_time, outf):
 
     crmutils.str2file(out_string, outf)
 
+def dump_state(workdir):
+    res = grep("^Last upd", incmd="crm_mon -1", flag="v")
+    crmutils.str2file('\n'.join(res), os.path.join(workdir, constants.CRM_MON_F))
+    cmd = "cibadmin -Ql"
+    crmutils.str2file(get_command_info(cmd)[1], os.path.join(workdir, constants.CIB_F))
+    cmd = "crm_node -p"
+    crmutils.str2file(get_command_info(cmd)[1], os.path.join(workdir, constants.MEMBERSHIP_F))
+
 def find_decompressor(log_file):
     decompressor = "echo"
     if re.search("bz2$", log_file):
@@ -188,6 +276,29 @@ def find_decompressor(log_file):
         if re.search("text", get_command_info("file %s" % log_file)[1]):
             decompressor = "cat"
     return decompressor
+
+def find_files(dirs, from_time, to_time):
+    res = []
+
+    if (not crmutils.is_int(from_time)) or (from_time <= 0):
+        log_warning("sorry, can't find files based on time if you don't supply time")
+        return
+
+    from_stamp = create_tempfile(from_time)
+    add_tmpfiles(from_stamp)
+    findexp = "-newer %s" % from_stamp
+
+    if crmutils.is_int(to_time) and to_time > 0:
+        to_stamp = create_tempfile(to_time)
+        add_tmpfiles(to_stamp)
+        findexp += " ! -newer %s" % to_stamp
+
+    cmd = r"find %s -type f %s" % (dirs, findexp)
+    cmd_res = get_command_info(cmd)[1].strip()
+    if cmd_res:
+        res = cmd_res.split('\n')
+
+    return res
 
 def find_first_ts(data):
     for line in data:
@@ -334,6 +445,16 @@ def findln_by_time(logf, tm):
             break
     return mid
 
+def get_backtraces():
+    flist = []
+    for f in find_files(constants.CORES_DIRS, constants.FROM_TIME, constants.TO_TIME):
+        bf = os.path.basename(f)
+        if re.search("core", bf):
+            flist.append(f)
+    if flist:
+        get_bt(flist)
+        log_debug("found backtraces: %s" % ' '.join(flist))
+
 def get_cib_dir():
     try:
         constants.CIB_DIR = crmsh.config.path.crm_config
@@ -356,6 +477,30 @@ def get_conf_var(option, default=None):
             if re.match("^\s*%s\s*:"%option, line):
                 ret = line.split(':')[1].lstrip()
     return ret
+
+def get_config():
+    workdir = constants.WORKDIR
+    if os.path.isfile(constants.CONF):
+        shutil.copy2(constants.CONF, workdir)
+    if crmutils.is_process("crmd"):
+        dump_state(workdir)
+        with open(os.path.join(workdir, "RUNNING"), 'w') as f:
+            pass
+    else:
+        shutil.copy2(os.path.join(constants.CIB_DIR, constants.CIB_F), workdir)
+        with open(os.path.join(workdir, "STOPPED"), 'w') as f:
+            pass
+    if os.path.isfile(os.path.join(workdir, constants.CIB_F)):
+        cmd = "crm_verify -V -x %s" % os.path.join(workdir, constants.CIB_F)
+        crmutils.str2file(get_command_info(cmd)[1], os.path.join(workdir, constants.CRM_VERIFY_F))
+
+def get_configurations():
+    workdir = constants.WORKDIR
+    for conf in constants.CONFIGURATIONS:
+        if os.path.isfile(conf):
+            shutil.copy2(conf, workdir)
+        elif os.path.isdir(conf):
+            shutil.copytree(conf, os.path.join(workdir, os.path.basename(conf)))
 
 def get_crm_daemon_dir():
     try:
@@ -400,6 +545,46 @@ def get_nodes():
 
     return nodes
 
+def get_ratraces():
+    trace_dir = os.path.join(constants.HA_VARLIB, "trace_ra")
+    if not os.path.isdir(trace_dir):
+        return
+    log_debug("looking for RA trace files in %s" % trace_dir)
+    flist = []
+    for f in find_files(trace_dir, constants.FROM_TIME, constants.TO_TIME):
+        flist.append(os.path.join("trace_ra", '/'.join(f.split('/')[-2:])))
+    if flist:
+        cmd = "tar -cf - -C `dirname %s` %s | tar -xf - -C %s" % (trace_dir, ' '.join(flist), constants.WORKDIR)
+        crmutils.ext_cmd(cmd)
+        log_debug("found %d RA trace files in %s" % (len(flist), trace_dir))
+
+def get_pe_inputs():
+    from_time = constants.FROM_TIME
+    to_time = constants.TO_TIME
+    work_dir = constants.WORKDIR
+    pe_dir = constants.PE_STATE_DIR
+    log_debug("looking for PE files in %s in %s" % (pe_dir, constants.WE))
+
+    flist = []
+    for f in find_files(pe_dir, from_time, to_time):
+        if re.search("[.]last$", f):
+            continue
+        flist.append(f)
+
+    if flist:
+        flist_dir = os.path.join(work_dir, os.path.basename(pe_dir))
+        _mkdir(flist_dir)
+        for f in flist:
+            os.symlink(f, os.path.join(flist_dir, os.path.basename(f)))
+        log_debug("found %d pengine input files in %s" % (len(flist), pe_dir))
+
+    if len(flist) <= 20:
+        if constants.SKIP_LVL == 0:
+            for f in flist:
+                pe_to_dot(os.path.join(flist_dir, os.path.basename(f)))
+    else:
+        log_debug("too many PE inputs to create dot files")
+
 def get_ocf_dir():
     ocf_dir = None
     try:
@@ -417,6 +602,22 @@ def get_pe_state_dir():
         return
     if not os.path.isdir(constants.PE_STATE_DIR):
         constants.PE_STATE_DIR = None
+
+def get_pkg_mgr():
+    pkg_mgr = None
+
+    if which("dpkg"):
+        pkg_mgr = "deb"
+    elif which("rpm"):
+        pkg_mgr = "rpm"
+    elif which("pkg_info"):
+        pkg_mgr = "pkg_info"
+    elif which("pkginfo"):
+        pkg_mgr = "pkginfo"
+    else:
+        log_warning("Unknown package manager!")
+
+    return pkg_mgr
 
 def get_stamp_legacy(line):   
     try:
@@ -597,6 +798,49 @@ def node_needs_pwd(node):
             return True
     return False
 
+def pkg_ver_deb(packages):
+    pass
+
+def pkg_ver_pkg_info(packages):
+    pass
+
+def pkg_ver_pkginfo(packages):
+    pass
+
+def pkg_ver_rpm(packages):
+    res = ""
+    for pack in packages.split():
+        code, out = get_command_info("rpm -qi %s"%pack)
+        if code != 0:
+            continue
+        for line in out.split('\n'):
+            if re.match("^Name\s*:", line):
+                name = line.split(':')[1].lstrip()
+            elif re.match("^Version\s*:", line):
+                version = line.split(':')[1].lstrip()
+            elif re.match("^Release\s*:", line):
+                release = line.split(':')[1].lstrip()
+            elif re.match("^Distribution\s*:", line):
+                distro = line.split(':')[1].lstrip()
+            elif re.match("^Architecture\s*:", line):
+                arch = line.split(':')[1].lstrip()
+        res += "%s %s-%s - %s %s\n" % (name, version, release, distro, arch)
+    return res
+
+def pkg_versions(packages):
+    pkg_mgr = get_pkg_mgr()
+    if not pkg_mgr:
+        return ""
+    log_debug("the package manager is %s" % pkg_mgr)
+    if pkg_mgr == "deb":
+        return pkg_ver_deb(packages)
+    if pkg_mgr == "rpm":
+        return pkg_ver_rpm(packages)
+    if pkg_mgr == "pkg_info":
+        return pkg_ver_pkg_info(packages)
+    if pkg_mgr == "pkginfo":
+        return pkg_ver_pkginfo(packages)
+
 def print_log(logf):
     cat = find_decompressor(logf)
     cmd = "%s %s" % (cat, logf)
@@ -636,12 +880,62 @@ def print_logseg(logf, from_time, to_time):
     log_debug("including segment [%s-%s] from %s" % (FROM_LINE, TO_LINE, sourcef))
     return dump_log(sourcef, FROM_LINE, TO_LINE)
 
+def ra_build_info():
+    inf = "%s/lib/heartbeat/ocf-shellfuncs" % constants.OCF_DIR
+    out = grep("Build version:", infile=inf)[0]
+    if re.search(r"\$Format:%H\$", out):
+        out = "UNKnown"
+    return "resource-agents: %s\n" % out
+
 def random_string(num):       
     tmp = []
     if crmutils.is_int(num) and num > 0:
         s = string.letters + string.digits
         tmp = random.sample(s, num)
     return ''.join(tmp)
+
+def sanitize():
+    workdir = constants.WORKDIR
+    conf = os.path.join(workdir, constants.B_CONF)
+    if os.path.isfile(conf):
+        sanitize_one(conf)
+    cib_f = os.path.join(workdir, constants.CIB_F)
+    rc = 0
+    for f in [cib_f] + glob.glob(os.path.join(workdir, "pengine", "*")):
+        if os.path.isfile(f):
+            if constants.DO_SANITIZE == 1:
+                sanitize_one(f)
+            else:
+                rc = sanitize_one(f, "test")
+    if rc != 0:
+        log_warning("some PE or CIB files contain possibly sensitive data")
+        log_warning("you may not want to send this report to a public mailing list")
+
+def sanitize_one(in_file, mode=None):
+    open_ = None
+    if re.search("gz$", in_file):
+        open_ = gzip.open
+    elif re.search("bz2$", in_file):
+        open_ = bz2.BZ2File
+    else:
+        open_ = open
+    with open_(in_file, 'r') as f:
+        data = f.read()
+
+    if mode == "test":
+        if sub_string_test(data):
+            return 1
+        else:
+            return 0
+
+    ref = create_tempfile()
+    add_tmpfiles(ref)
+    touch_r(in_file, ref)
+
+    with open_(in_file, 'w') as f:
+        f.write(sub_string(data))
+
+    touch_r(ref, in_file)
 
 def set_env():
     os.environ["LC_ALL"] = "POSIX"
@@ -687,6 +981,51 @@ def start_slave_collector(node, arg_str):
         cmd = r"(cd {} && tar xf -)".format(constants.WORKDIR)
         crmutils.get_stdout(cmd, input_s=out)
 
+def sub_string_test(in_string, pattern=constants.SANITIZE):
+    pattern_string = re.sub(" ", "|", pattern)
+    for line in in_string.split('\n'):
+        if re.search('name="%s"'%pattern_string, line):
+            return True
+    return False
+
+def sys_info():
+    out_string = "#####Cluster info:\n"
+    out_string += cluster_info()
+    out_string += crmsh_info()
+    out_string += ra_build_info()
+    out_string += crm_info()
+    out_string += booth_info()
+    out_string += "\n"
+    out_string += "#####Cluster related packages:\n"
+    out_string += pkg_versions(constants.PACKAGES)
+    if constants.SKIP_LVL == 0:
+        out_string += verify_packages(constants.PACKAGES)
+    out_string += "\n"
+    out_string += "#####System info:\n"
+    out_string += "Platform: %s\n" % os.uname()[0]
+    out_string += "Kernel release: %s\n" % os.uname()[2]
+    out_string += "Architecture: %s\n" % os.uname()[-1]
+    if os.uname()[0] == "Linux":
+        out_string += "Distribution: %s\n" % distro()
+
+    sys_info_f = os.path.join(constants.WORKDIR, constants.SYSINFO_F)
+    crmutils.str2file(out_string, sys_info_f)
+
+def sys_stats():
+    out_string = ""
+    cmd_list = ["hostname", "uptime", "ps axf", "ps auxw", "top -b -n 1",\
+                "ip addr", "netstat -i", "arp -an", "lsscsi", "lspci",\
+                "mount", "cat /proc/cpuinfo", "df"]
+    for cmd in cmd_list:
+        out_string += "##### run \"%s\" on %s\n" % (cmd, constants.WE)
+        if cmd != "df":
+            out_string += get_command_info(cmd)[1] + '\n'
+        else:
+            out_string += get_command_info_timeout(cmd) + '\n'
+
+    sys_stats_f = os.path.join(constants.WORKDIR, constants.SYSSTATS_F)
+    crmutils.str2file(out_string, sys_stats_f)
+
 def tail(n, indata):
     return indata.split('\n')[n-1:-1]
 
@@ -698,6 +1037,33 @@ def test_ssh_conn(addr):
     else:
         return False
 
+def time_status():
+    out_string = "Time: "
+    out_string += datetime.datetime.now().strftime('%c') + '\n'
+    out_string += "ntpdc: "
+    out_string += get_command_info("ntpdc -pn")[1] + '\n'
+
+    time_f = os.path.join(constants.WORKDIR, constants.TIME_F)
+    crmutils.str2file(out_string, time_f)
+
+def touch_dc():
+    if constants.SKIP_LVL == 1:
+        return
+    node = crmutils.get_dc()
+    if node and node == constants.WE:
+        with open(os.path.join(constants.WORKDIR, "DC"), 'w') as f:
+            pass
+
+def touch_r(src, dst):
+    """
+    like shell command "touch -r src dst"
+    """
+    if not os.path.exists(src):
+        log_warning("In touch_r function, %s not exists" % src)
+        return
+    stat_info = os.stat(src)
+    os.utime(dst, (stat_info.st_atime, stat_info.st_mtime))
+
 def ts_to_dt(timestamp):
     """
     timestamp convert to datetime; consider local timezone
@@ -705,6 +1071,38 @@ def ts_to_dt(timestamp):
     dt = crmutils.timestamp_to_datetime(timestamp)
     dt += tz.tzlocal().utcoffset(dt)
     return dt
+
+def verify_deb(packages):
+    pass
+
+def verify_packages(packages):
+    pkg_mgr = get_pkg_mgr()
+    if not pkg_mgr:
+        return ""
+    if pkg_mgr == "deb":
+        return verify_deb(packages)
+    if pkg_mgr == "rpm":
+        return verify_rpm(packages)
+    if pkg_mgr == "pkg_info":
+        return verify_pkg_info(packages)
+    if pkg_mgr == "pkginfo":
+        return verify_pkginfo(packages)
+
+def verify_pkg_info(packages):
+    pass
+
+def verify_pkginfo(packages):
+    pass
+
+def verify_rpm(packages):
+    res = ""
+    for pack in packages.split():
+        cmd = r"rpm --verify %s|grep -v 'not installed'" % pack
+        code, out = crmutils.get_stdout(cmd)
+        if code != 0 and out:
+            res = "For package %s:\n" % pack
+            res += out + "\n"
+    return res
 
 def which(prog):
     code, _ = get_command_info("which %s" % prog)
