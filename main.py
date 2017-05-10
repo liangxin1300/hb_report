@@ -123,6 +123,8 @@ def run():
     if is_collector():
         load_env(' '.join(sys.argv[2:]))
 
+    utillib.compatibility_pcmk()
+
 def set_dest(dest):
     if dest:
         constants.DESTDIR = utillib.get_dirname(dest)

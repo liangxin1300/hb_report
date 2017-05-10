@@ -60,6 +60,25 @@ def check_time(var, option):
                                         "09-Sep-07 2:00"
                   """%option)
 
+def compatibility_pcmk():     
+    get_crm_daemon_dir()      
+    if not constants.CRM_DAEMON_DIR:
+        log_fatal("cannot find pacemaker daemon directory!")
+    get_pe_state_dir()        
+    if not constants.PE_STATE_DIR:     
+        log_fatal("cannot find pe daemon directory!")
+    get_cib_dir()  
+    if not constants.CIB_DIR:
+        log_fatal("cannot find cib daemon directory!")
+
+    constants.PCMK_LIB = os.path.dirname(constants.CIB_DIR)
+    log_debug("setting PCMK_LIB to %s" % constants.PCMK_LIB)
+    constants.CORES_DIRS = os.path.join(constants.PCMK_LIB, "cores")
+    constants.CONF = "/etc/corosync/corosync.conf"
+    if os.path.isfile(constants.CONF): 
+        constants.CORES_DIRS += " /var/lib/corosync"
+    constants.B_CONF = os.path.basename(constants.CONF)
+
 def create_tempfile(time=None):        
     random_str = random_string(4)  
     try:
@@ -82,12 +101,29 @@ def drop_tempfiles():
                 os.remove(line)
     os.remove(constants.TMPFLIST)
 
+def get_cib_dir():
+    try:
+        constants.CIB_DIR = crmsh.config.path.crm_config
+    except:
+        return
+    if not os.path.isdir(constants.CIB_DIR):
+        constants.CIB_DIR = None
+
 def get_command_info(cmd):
     code, out, err = crmutils.get_stdout_stderr(cmd)
     if out:
         return (code, out + '\n')  
     else:
         return (code, "")
+
+def get_crm_daemon_dir():
+    try:
+        constants.CRM_DAEMON_DIR = crmsh.config.path.crm_daemon_dir
+    except:
+        return
+    if not os.path.isdir(constants.CRM_DAEMON_DIR) or \
+       not is_exec(os.path.join(constants.CRM_DAEMON_DIR, "crmd")):
+        constants.CRM_DAEMON_DIR = None
 
 def get_dirname(path):
     tmp = os.path.dirname(path)
@@ -104,6 +140,14 @@ def get_ocf_dir():
     if not os.path.isdir(ocf_dir):
         log_fatal("Directory %s is not OCF_ROOT_DIR!" % ocf_dir)
     constants.OCF_DIR = ocf_dir
+
+def get_pe_state_dir():
+    try:
+        constants.PE_STATE_DIR = crmsh.config.path.pe_state_dir
+    except:
+        return
+    if not os.path.isdir(constants.PE_STATE_DIR):
+        constants.PE_STATE_DIR = None
 
 def grep(pattern, infile=None, incmd=None, flag=None):
     res = []
@@ -166,6 +210,9 @@ def grep_row(pattern, indata, flag):
             else:
                 res.append(line)
     return res
+
+def is_exec(filename):
+    return os.path.isfile(filename) and os.access(filename, os.X_OK)
 
 def load_ocf_dirs():
     inf = "%s/lib/heartbeat/ocf-directories" % constants.OCF_DIR
