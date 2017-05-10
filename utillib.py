@@ -89,6 +89,12 @@ def get_command_info(cmd):
     else:
         return (code, "")
 
+def get_dirname(path):
+    tmp = os.path.dirname(path)
+    if not tmp:
+        tmp = "."
+    return tmp
+
 def get_ocf_dir():
     ocf_dir = None
     try:

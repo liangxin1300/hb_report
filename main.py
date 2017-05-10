@@ -83,6 +83,22 @@ def run():
 
     if not is_collector():
         parse_argument(sys.argv)
+        set_dest(constants.TMP)
+        constants.WORKDIR = os.path.join(tmpdir, constants.DEST)
+    else:
+        constants.WORKDIR = os.path.join(tmpdir, constants.DEST, constants.WE)
+    utillib._mkdir(constants.WORKDIR)
+
+def set_dest(dest):
+    if dest:
+        constants.DESTDIR = utillib.get_dirname(dest)
+        constants.DEST = os.path.basename(dest)
+    if not os.path.isdir(constants.DESTDIR):
+        utillib.log_fatal("%s is illegal directory name" % constants.DESTDIR)
+    if not crmutils.is_filename_sane(constants.DEST):
+        utillib.log_fatal("%s contains illegal characters" % constants.DEST)
+    if not constants.COMPRESS:
+        pass
 
 def usage(short_msg=''):
     print("""
