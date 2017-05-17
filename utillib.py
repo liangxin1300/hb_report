@@ -536,15 +536,15 @@ def find_getstampproc(log_file):
 
 def find_getstampproc_raw(line):
     func = None
-    res = get_stamp_rfc5424(line)
-    if res:
-        func = "rfc5424"
-        log_debug("the log file is in the rfc5424 format")
-        return func
     res = get_stamp_syslog(line)
     if res:
         func = "syslog"
         log_debug("the log file is in the syslog format")
+        return func
+    res = get_stamp_rfc5424(line)
+    if res:
+        func = "rfc5424"
+        log_debug("the log file is in the rfc5424 format")
         return func
     res = get_stamp_legacy(line)
     if res:
@@ -864,9 +864,9 @@ def get_ts(line):
             if func == "rfc5424":
                 ts = crmutils.parse_to_timestamp(line.split()[0])
             if func == "syslog":
-                ts = crmutils.parse_to_timestamp(line.split()[1])
-            if func == "legacy":
                 ts = crmutils.parse_to_timestamp(' '.join(line.split()[0:3]))
+            if func == "legacy":
+                ts = crmutils.parse_to_timestamp(line.split()[1])
     return ts
 
 def grep(pattern, infile=None, incmd=None, flag=None):
