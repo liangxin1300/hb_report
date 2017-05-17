@@ -244,6 +244,16 @@ def run():
         for p in p_list:
             p.join()
 
+        if constants.COMPRESS == 1:
+            utillib.pick_compress()
+            cmd = r"(cd %s/.. && tar cf - %s)|%s > %s/%s.tar%s" % (\
+                  constants.WORKDIR, constants.DEST, constants.COMPRESS_PROG,\
+                  constants.DESTDIR, constants.DEST, constants.COMPRESS_EXT)
+            crmutils.ext_cmd(cmd)
+        else:
+            shutil.move(constants.WORKDIR, constants.DESTDIR)
+        utillib.finalword()
+
 def set_dest(dest):
     if dest:
         constants.DESTDIR = utillib.get_dirname(dest)

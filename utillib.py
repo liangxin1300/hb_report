@@ -485,6 +485,16 @@ def filter_lines(logf, from_line, to_line=None):
             count += 1
     return out_string
 
+def finalword():
+    if constants.COMPRESS == 1:
+        log_info("The report is saved in %s/%s.tar%s" % (constants.DESTDIR, constants.DEST, constants.COMPRESS_EXT))
+    else:
+        log_info("The report is saved in %s/%s" % (constants.DESTDIR, constants.DEST))
+    log_info("Report timespan: %s - %s" % \
+            (ts_to_dt(constants.FROM_TIME).strftime("%x %X"), \
+            ts_to_dt(constants.TO_TIME).strftime("%x %X")))
+    log_info("Thank you for taking time to create this report.")
+
 def find_getstampproc(log_file):
     func = None
     loop_cout = 10
@@ -977,6 +987,26 @@ def node_needs_pwd(node):
         if n == node:
             return True
     return False
+
+def pick_compress():
+    constants.COMPRESS_PROG = pick_first(["bzip2", "gzip", "xz"])
+    if constants.COMPRESS_PROG:
+        if constants.COMPRESS_PROG == "xz":
+            constants.COMPRESS_EXT = ".xz"
+        elif constants.COMPRESS_PROG == "bzip2":
+            constants.COMPRESS_EXT = ".bz2"
+        else:
+            constants.COMPRESS_EXT = ".gz"
+    else:
+        log_warning("could not find a compression program; \
+                     the resulting tarball may be huge")
+        constants.COMPRESS_PROG = "cat"
+
+def pick_first(choice):
+    for tmp in choice:
+        if crmutils.is_program(tmp):
+            return tmp
+    return None
 
 def pkg_ver_deb(packages):
     pass
