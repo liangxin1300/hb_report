@@ -338,7 +338,8 @@ usage: report -f {time} [-t time]
     sys.exit(1)
 
 def version():
-    utillib.crmsh_info()
+    print utillib.crmsh_info().strip('\n')
+    sys.exit(0)
 
 run()
 # vim:ts=4:sw=4:et:
