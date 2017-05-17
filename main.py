@@ -262,8 +262,11 @@ def set_dest(dest):
         utillib.log_fatal("%s is illegal directory name" % constants.DESTDIR)
     if not crmutils.is_filename_sane(constants.DEST):
         utillib.log_fatal("%s contains illegal characters" % constants.DEST)
-    if not constants.COMPRESS:
-        pass
+    if not constants.COMPRESS and os.path.isdir(os.path.join(constants.DESTDIR, constants.DEST)):
+        if constants.FORCE_REMOVE_DEST:
+            shutil.rmtree(os.path.join(constants.DESTDIR, constants.DEST))   
+        else:
+            utillib.log_fatal("destination directory DESTDIR/DEST exists, please cleanup or use -Z")
 
 def usage(short_msg=''):
     print("""
