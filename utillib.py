@@ -348,6 +348,15 @@ def diff_check(file1, file2):
     else:
         return (0, txt_diff(file1, file2))
 
+def distro():
+    ret = ""
+    if which("lsb_release"):
+        log_debug("using lsb_release for distribution info")
+        res = get_command_info("lsb_release -d")[1]
+        if re.search("Description:", res):
+            ret = ' '.join(res.split()[1:])
+        return ret
+
 def dlm_dump():
     #TODO
     pass
@@ -643,6 +652,22 @@ def get_command_info(cmd):
     else:
         return (code, "")
 
+def get_command_info_timeout(cmd, timeout=5):
+    #Phthon 101: How to timeout a subprocess
+    kill = lambda process: process.kill()
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    my_timer = Timer(timeout, kill, [proc])
+    try:
+        my_timer.start()
+        stdout, stderr = proc.communicate()
+    finally:
+        my_timer.cancel()
+
+    if stdout and proc.returncode == 0:
+        return stdout
+    else:
+        return ""
+
 def get_conf_var(option, default=None):
     ret = default
     with open(constants.CONF, 'r') as f:
@@ -891,6 +916,9 @@ def grep_row(pattern, indata, flag):
                 res.append(line)
     return res
 
+def head(n, indata):          
+    return indata.split('\n')[:n]
+
 def is_conf_set(option, subsys=None):
     subsys_start = 0
     with open(constants.CONF, 'r') as f:
@@ -987,6 +1015,13 @@ def node_needs_pwd(node):
         if n == node:
             return True
     return False
+
+def pe_to_dot(pe_file):
+    dotf = '.'.join(pe_file.split('.')[:-1]) + '.dot'
+    cmd = "%s -D %s -x %s" % (constants.PTEST, dotf, pe_file)
+    code, _ = crmutils.get_stdout(cmd)
+    if code != 0:
+        log_warning("pe_to_dot: %s -> %s failed" % (pe_file, dotf))
 
 def pick_compress():
     constants.COMPRESS_PROG = pick_first(["bzip2", "gzip", "xz"])
@@ -1200,6 +1235,20 @@ def start_slave_collector(node, arg_str):
         _, out = crmutils.get_stdout(cmd)
         cmd = r"(cd {} && tar xf -)".format(constants.WORKDIR)
         crmutils.get_stdout(cmd, input_s=out)
+
+def sub_string(in_string,
+               pattern=constants.SANITIZE,
+               sub_pattern=' value=".*" ',
+               repl=' value="******" '):
+    res_string = ""
+    pattern_string = re.sub(" ", "|", pattern)
+    for line in in_string.split('\n')[:-1]:
+        if re.search('name="%s"'%pattern_string, line):
+            res_string += re.sub(sub_pattern, repl, line) + '\n'
+        else:
+            res_string += line + '\n'
+    return res_string
+
 
 def sub_string_test(in_string, pattern=constants.SANITIZE):
     pattern_string = re.sub(" ", "|", pattern)

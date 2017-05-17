@@ -339,3 +339,6 @@ usage: report -f {time} [-t time]
 
 def version():
     utillib.crmsh_info()
+
+run()
+# vim:ts=4:sw=4:et:
