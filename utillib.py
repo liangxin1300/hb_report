@@ -254,6 +254,21 @@ def collect_info():
     if constants.SKIP_LVL == 0:
         sanitize()
 
+    for l in constants.EXTRA_LOGS.split():
+        if not os.path.isfile(l):
+            continue
+        if l == constants.HA_LOG and l != constants.HALOG_F:
+            os.symlink(constants.HALOG_F, os.path.join(constants.WORKDIR, os.path.basename(l)))
+            continue
+        getstampproc = find_getstampproc(l)
+        if getstampproc:
+            constants.GET_STAMP_FUNC = getstampproc
+            outf = os.path.join(constants.WORKDIR, os.path.basename(l))
+            dump_logset(l, constants.FROM_TIME, constants.TO_TIME, outf)
+            log_size(l, outf+'.info')
+        else:
+            log_warning("could not figure out the log format of %s" % l)
+
 def collect_journal(from_t, to_t, outf):
     if not which("journalctl"):
         log_warning("Command journalctl not found")
