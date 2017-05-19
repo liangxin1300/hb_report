@@ -16,11 +16,13 @@ from crmsh import utils as crmutils
 def collect_for_nodes(nodes, arg_str):
     for node in nodes.split():
         if utillib.node_needs_pwd(node):
-            pass
+            utillib.log_info("Please provide password for %s at %s" % (utillib.say_ssh_user(), node))
+            utillib.log_info("Note that collecting data will take a while.")
+            utillib.start_slave_collector(node, arg_str)
         else:
-           p = multiprocessing.Process(target=utillib.start_slave_collector, args=(node, arg_str))
-           p.start()
-           p.join()
+            p = multiprocessing.Process(target=utillib.start_slave_collector, args=(node, arg_str))
+            p.start()
+            p.join()
 
 def dump_env():
     env_dict = {}

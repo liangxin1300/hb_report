@@ -730,6 +730,13 @@ def get_dirname(path):
         tmp = "."
     return tmp
 
+def get_local_ip():
+    local_ip = []
+    ip_pattern = "[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}"
+    for line in grep(ip_pattern, incmd="corosync-cfgtool -s"):
+        local_ip.append(line.split()[2])
+    return local_ip
+
 def get_log_vars():
     if is_conf_set("debug"):
         constants.HA_LOGLEVEL = "debug"
@@ -797,6 +804,16 @@ def get_pe_inputs():
                 pe_to_dot(os.path.join(flist_dir, os.path.basename(f)))
     else:
         log_debug("too many PE inputs to create dot files")
+
+def get_peer_ip():
+    local_ip = get_local_ip()
+    peer_ip = []
+    ip_pattern = "[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}"
+    for line in grep("runtime.*.srp.*.ip", incmd="corosync-cmapctl"):
+        for ip in re.findall(ip_pattern, line):
+            if ip not in local_ip:
+                peer_ip.append(ip)
+    return peer_ip
 
 def get_ocf_dir():
     ocf_dir = None
@@ -1074,6 +1091,7 @@ def pkg_ver_rpm(packages):
         if code != 0:
             continue
         for line in out.split('\n'):
+            distro = "Unknown"
             if re.match("^Name\s*:", line):
                 name = line.split(':')[1].lstrip()
             elif re.match("^Version\s*:", line):
@@ -1197,6 +1215,12 @@ def sanitize_one(in_file, mode=None):
 
     touch_r(ref, in_file)
 
+def say_ssh_user():
+    if not constants.SSH_USER:
+        return "you user"
+    else:
+        return constants.SSH_USER
+
 def sed_inplace(filename, pattern, repl):
     out_string = ""
 
@@ -1247,7 +1271,17 @@ def start_slave_collector(node, arg_str):
                      constants.SUDO, os.getcwd())
         for item in arg_str.split():
             cmd += " {}".format(str(item))
-        _, out = crmutils.get_stdout(cmd)
+        code, out, err = crmutils.get_stdout_stderr(cmd)
+        if code != 0:
+            log_warning(err)
+            for ip in get_peer_ip():
+                log_info("Trying connect by %s" % ip)
+                cmd = cmd.replace(node, ip, 1)
+                code, out, err = crmutils.get_stdout_stderr(cmd)
+                if code != 0:
+                    log_warning(err)
+                break
+
         cmd = r"(cd {} && tar xf -)".format(constants.WORKDIR)
         crmutils.get_stdout(cmd, input_s=out)
 
