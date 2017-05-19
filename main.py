@@ -346,5 +346,4 @@ def version():
     print utillib.crmsh_info().strip('\n')
     sys.exit(0)
 
-run()
 # vim:ts=4:sw=4:et:

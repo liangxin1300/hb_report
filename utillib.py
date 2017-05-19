@@ -1258,7 +1258,7 @@ def stdchannel_redirected(stdchannel, dest_filename):
 
 def start_slave_collector(node, arg_str):
     if node == constants.WE:
-        cmd = r"python {}/main.py __slave".format(os.getcwd())
+        cmd = r"hb_report __slave".format(os.getcwd())
         for item in arg_str.split():
             cmd += " {}".format(str(item))
         _, out = crmutils.get_stdout(cmd)
@@ -1266,7 +1266,7 @@ def start_slave_collector(node, arg_str):
         crmutils.get_stdout(cmd, input_s=out)
 
     else:
-        cmd = r'ssh {} {} "{} python {}/main.py __slave"'.\
+        cmd = r'ssh {} {} "{} hb_report __slave"'.\
               format(constants.SSH_OPTS, node, \
                      constants.SUDO, os.getcwd())
         for item in arg_str.split():
