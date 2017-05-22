@@ -347,7 +347,8 @@ def crm_info():
     return get_command_info("%s/crmd version" % constants.CRM_DAEMON_DIR)[1]
 
 def crmsh_info():
-    return get_command_info("crm report -V")[1]
+    res = grep("^Version", incmd="rpm -qi crmsh")
+    return res[0].split()[-1]
 
 def date():
     return datetime.datetime.now().strftime("%a %b %-d %H:%M:%S CST %Y")
