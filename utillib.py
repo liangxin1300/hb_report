@@ -1346,7 +1346,7 @@ def sys_stats():
     crmutils.str2file(out_string, sys_stats_f)
 
 def tail(n, indata):
-    return indata.split('\n')[n-1:-1]
+    return indata.split('\n')[n-2:-1]
 
 def test_ssh_conn(addr):
     cmd = r"ssh %s -T -o Batchmode=yes %s true" % (constants.SSH_OPTS, addr)
